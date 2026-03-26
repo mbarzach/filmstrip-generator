@@ -26,13 +26,15 @@ JUCE draws one frame at a time based on parameter value, creating the illusion o
 
 ## Dialog Options
 
-- **Animate** — The layer or group that moves or rotates. Only this element is visible in each frame.
-- **Bounds** — The layer whose bounding box defines the crop region. Hidden during capture.
-- **Mode** — Up/Down, Left/Right, or Rotate.
-- **Start/End Angle** — Rotation range in degrees. Only active in Rotate mode.
-- **Preview Start / Preview End** — Temporarily applies the rotation to the PSD so you can verify the range. Only active in Rotate mode.
-- **Reset Preview** — Undoes any preview rotation.
-- **Number of Frames** — Total frames in the filmstrip. Common values: 65, 101, 128.
+![Dialog](dialog.png)
+
+- **Animate** - The layer or group that moves or rotates. Only this element is visible in each frame.
+- **Bounds** - The layer whose bounding box defines the crop region. Hidden during capture.
+- **Mode** - Up/Down, Left/Right, or Rotate.
+- **Start/End Angle** - Rotation range in degrees. Only active in Rotate mode.
+- **Preview Start / Preview End** - Temporarily applies the rotation to the PSD so you can verify the range. Only active in Rotate mode.
+- **Reset Preview** - Undoes any preview rotation.
+- **Number of Frames** - Total frames in the filmstrip. Common values: 65, 101, 128.
 
 A Save As dialog opens after generation.
 
