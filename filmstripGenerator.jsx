@@ -7,6 +7,7 @@
  *   1. Up/Down    - translates vertically (sliders, faders)
  *   2. Left/Right - translates horizontally
  *   3. Rotate     - rotates between start/end angles (knobs)
+ *                   Optional pivot layer for off-center rotation (gauge needles)
  *
  * A separate "bounds" layer defines the crop region for each frame.
  *
@@ -90,6 +91,50 @@
             parent.visible = true;
             parent = parent.parent;
         }
+    }
+
+    function getPivotCenter(layer) {
+        var b = getBounds(layer);
+        return {
+            x: (b.left + b.right) / 2,
+            y: (b.top + b.bottom) / 2
+        };
+    }
+
+    function rotateAroundPivot(layer, angle, pivotX, pivotY) {
+        var doc = layer.parent;
+        while (doc.typename !== "Document") doc = doc.parent;
+        doc.activeLayer = layer;
+
+        var desc = new ActionDescriptor();
+        var ref = new ActionReference();
+        ref.putEnumerated(
+            charIDToTypeID("Lyr "),
+            charIDToTypeID("Ordn"),
+            charIDToTypeID("Trgt")
+        );
+        desc.putReference(charIDToTypeID("null"), ref);
+        desc.putEnumerated(
+            charIDToTypeID("FTcs"),
+            charIDToTypeID("QCSt"),
+            charIDToTypeID("Qcsa")
+        );
+
+        var posDesc = new ActionDescriptor();
+        posDesc.putUnitDouble(
+            charIDToTypeID("Hrzn"), charIDToTypeID("#Pxl"), pivotX
+        );
+        posDesc.putUnitDouble(
+            charIDToTypeID("Vrtc"), charIDToTypeID("#Pxl"), pivotY
+        );
+        desc.putObject(
+            charIDToTypeID("Pstn"), charIDToTypeID("Pnt "), posDesc
+        );
+
+        desc.putUnitDouble(
+            charIDToTypeID("Angl"), charIDToTypeID("#Ang"), angle
+        );
+        executeAction(charIDToTypeID("Trnf"), desc, DialogModes.NO);
     }
 
     // ================================================================
@@ -207,6 +252,34 @@
     resetGrp.alignment = ["center", "top"];
     var resetPreviewBtn = resetGrp.add("button", undefined, "Reset Preview");
 
+    var pivotSep = motionPanel.add("statictext", undefined,
+        "\u2500\u2500 Pivot Settings \u2500\u2500");
+    pivotSep.alignment = ["center", "top"];
+
+    var pivotChkGrp = motionPanel.add("group");
+    pivotChkGrp.orientation = "row";
+    pivotChkGrp.alignChildren = ["left", "center"];
+    var pivotCheckbox = pivotChkGrp.add("checkbox", undefined, "Use pivot layer");
+    pivotCheckbox.value = false;
+    pivotCheckbox.helpTip =
+        "Rotate around the center of a separate pivot layer\n" +
+        "instead of the animate layer\u2019s own center.";
+
+    var pivotDropGrp = motionPanel.add("group");
+    pivotDropGrp.orientation = "row";
+    pivotDropGrp.alignChildren = ["left", "center"];
+    pivotDropGrp.add("statictext", undefined, "Pivot:");
+    var pivotDropdown = pivotDropGrp.add("dropdownlist", undefined, displayNames);
+    pivotDropdown.selection = 0;
+    pivotDropdown.enabled = false;
+    pivotDropdown.helpTip =
+        "The center of this layer\u2019s bounding box\n" +
+        "becomes the rotation origin.";
+
+    pivotCheckbox.onClick = function () {
+        pivotDropdown.enabled = pivotCheckbox.value;
+    };
+
     // -- Frames --
     var framesPanel = dlg.add("panel", undefined, "Frames");
     framesPanel.orientation = "column";
@@ -230,6 +303,13 @@
         previewStartBtn.enabled = isRotate;
         previewEndBtn.enabled = isRotate;
         resetPreviewBtn.enabled = isRotate;
+        pivotCheckbox.enabled = isRotate;
+        if (!isRotate) {
+            pivotCheckbox.value = false;
+            pivotDropdown.enabled = false;
+        } else {
+            pivotDropdown.enabled = pivotCheckbox.value;
+        }
     }
     modeDropdown.onChange = updateModeFields;
     updateModeFields();
@@ -250,7 +330,20 @@
                 var layer = findLayerByPath(src, layerEntries[idx].path);
                 if (layer && angle !== 0) {
                     src.activeLayer = layer;
-                    layer.rotate(angle, AnchorPosition.MIDDLECENTER);
+                    if (pivotCheckbox.value && pivotDropdown.selection) {
+                        var pvLayer = findLayerByPath(
+                            src,
+                            layerEntries[pivotDropdown.selection.index].path
+                        );
+                        if (pvLayer) {
+                            var pc = getPivotCenter(pvLayer);
+                            rotateAroundPivot(layer, angle, pc.x, pc.y);
+                        } else {
+                            layer.rotate(angle, AnchorPosition.MIDDLECENTER);
+                        }
+                    } else {
+                        layer.rotate(angle, AnchorPosition.MIDDLECENTER);
+                    }
                 }
             } catch (e) {
                 alert("Preview failed: " + e.message);
@@ -315,6 +408,28 @@
         if (isNaN(endAngle))   { alert("Invalid end angle."); return; }
     }
 
+    var usePivot = false;
+    var pivotIdx = -1;
+    var pivotEntry = null;
+
+    if (mode === 2 && pivotCheckbox.value) {
+        pivotIdx = pivotDropdown.selection ? pivotDropdown.selection.index : -1;
+        if (pivotIdx < 0) {
+            alert("Pivot is enabled but no pivot layer is selected.");
+            return;
+        }
+        if (pivotIdx === animIdx) {
+            alert("Pivot layer cannot be the same as the animate layer.");
+            return;
+        }
+        if (pivotIdx === boundsIdx) {
+            alert("Pivot layer cannot be the same as the bounds layer.");
+            return;
+        }
+        pivotEntry = layerEntries[pivotIdx];
+        usePivot = true;
+    }
+
     // ================================================================
     //  SETUP
     // ================================================================
@@ -334,6 +449,24 @@
         alert("Could not find bounds layer \"" + boundsEntry.name + "\".");
         app.preferences.rulerUnits = originalUnits;
         return;
+    }
+
+    var pivotLayer = null;
+    if (usePivot) {
+        pivotLayer = findLayerByPath(src, pivotEntry.path);
+        if (!pivotLayer) {
+            alert("Could not find pivot layer \"" + pivotEntry.name + "\".");
+            app.preferences.rulerUnits = originalUnits;
+            return;
+        }
+        var pivBounds = getBounds(pivotLayer);
+        var pivW = pivBounds.right - pivBounds.left;
+        var pivH = pivBounds.bottom - pivBounds.top;
+        if (pivW < 1 || pivH < 1) {
+            alert("Pivot layer has zero dimensions.\nMake sure it has visible content.");
+            app.preferences.rulerUnits = originalUnits;
+            return;
+        }
     }
 
     // ================================================================
@@ -502,6 +635,13 @@
         app.activeDocument = src;
         var savedState2 = src.activeHistoryState;
 
+        var pivotX = 0, pivotY = 0;
+        if (usePivot) {
+            var pc = getPivotCenter(pivotLayer);
+            pivotX = pc.x;
+            pivotY = pc.y;
+        }
+
         for (var i = 0; i < numFrames; i++) {
             try {
                 app.activeDocument = src;
@@ -514,11 +654,22 @@
                 }
                 anim2.visible = true;
                 makeParentsVisible(anim2);
+
+                // hide pivot layer so it doesn't appear in copy-merged
+                if (usePivot) {
+                    var pivRef = findLayerByPath(src, pivotEntry.path);
+                    if (pivRef) pivRef.visible = false;
+                }
+
                 src.activeLayer = anim2;
 
                 var angle = startAngle + angleStep * i;
                 if (angle !== 0) {
-                    anim2.rotate(angle, AnchorPosition.MIDDLECENTER);
+                    if (usePivot) {
+                        rotateAroundPivot(anim2, angle, pivotX, pivotY);
+                    } else {
+                        anim2.rotate(angle, AnchorPosition.MIDDLECENTER);
+                    }
                 }
 
                 src.selection.select(selRect);
@@ -585,6 +736,9 @@
                 modeLabel = "Rotate (" + startAngle + "\u00B0 to " +
                     endAngle + "\u00B0, step " +
                     angleStep.toFixed(2) + "\u00B0)";
+                if (usePivot) {
+                    modeLabel += "\nPivot:        \"" + pivotEntry.name + "\"";
+                }
                 break;
         }
 
