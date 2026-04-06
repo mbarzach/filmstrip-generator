@@ -101,7 +101,19 @@
         };
     }
 
-    function rotateAroundPivot(layer, angle, pivotX, pivotY) {
+    function rotateAroundPivot(layer, angleDeg, pivotX, pivotY) {
+        var b = getBounds(layer);
+        var cx = (b.left + b.right) / 2;
+        var cy = (b.top + b.bottom) / 2;
+
+        var rad = angleDeg * Math.PI / 180;
+        var vx = pivotX - cx;
+        var vy = pivotY - cy;
+        var newPivotX = cx + vx * Math.cos(rad) - vy * Math.sin(rad);
+        var newPivotY = cy + vx * Math.sin(rad) + vy * Math.cos(rad);
+        var dx = pivotX - newPivotX;
+        var dy = pivotY - newPivotY;
+
         var doc = layer.parent;
         while (doc.typename !== "Document") doc = doc.parent;
         doc.activeLayer = layer;
@@ -120,19 +132,19 @@
             charIDToTypeID("Qcsa")
         );
 
-        var posDesc = new ActionDescriptor();
-        posDesc.putUnitDouble(
-            charIDToTypeID("Hrzn"), charIDToTypeID("#Pxl"), pivotX
+        var ofstDesc = new ActionDescriptor();
+        ofstDesc.putUnitDouble(
+            charIDToTypeID("Hrzn"), charIDToTypeID("#Pxl"), dx
         );
-        posDesc.putUnitDouble(
-            charIDToTypeID("Vrtc"), charIDToTypeID("#Pxl"), pivotY
+        ofstDesc.putUnitDouble(
+            charIDToTypeID("Vrtc"), charIDToTypeID("#Pxl"), dy
         );
         desc.putObject(
-            charIDToTypeID("Pstn"), charIDToTypeID("Pnt "), posDesc
+            charIDToTypeID("Ofst"), charIDToTypeID("Ofst"), ofstDesc
         );
 
         desc.putUnitDouble(
-            charIDToTypeID("Angl"), charIDToTypeID("#Ang"), angle
+            charIDToTypeID("Angl"), charIDToTypeID("#Ang"), angleDeg
         );
         executeAction(charIDToTypeID("Trnf"), desc, DialogModes.NO);
     }
@@ -672,16 +684,32 @@
                     }
                 }
 
+                // Measure content position within the selection before
+                // copy-merged, which crops the clipboard to content bounds.
+                var rotB = getBounds(anim2);
+                var clipL = Math.max(rotB.left, refB.left);
+                var clipT = Math.max(rotB.top, refB.top);
+                var clipR = Math.min(rotB.right, refB.right);
+                var clipBt = Math.min(rotB.bottom, refB.bottom);
+                var contentCX = (clipL + clipR) / 2;
+                var contentCY = (clipT + clipBt) / 2;
+                var selCX = (refB.left + refB.right) / 2;
+                var selCY = (refB.top + refB.bottom) / 2;
+                var corrX = contentCX - selCX;
+                var corrY = contentCY - selCY;
+
                 src.selection.select(selRect);
                 src.selection.copy(true);
 
                 app.activeDocument = dst;
                 dst.paste();
 
-                if (frameDeltaY[i] !== 0) {
+                var tX = corrX;
+                var tY = frameDeltaY[i] + corrY;
+                if (tX !== 0 || tY !== 0) {
                     dst.activeLayer.translate(
-                        new UnitValue(0, "px"),
-                        new UnitValue(frameDeltaY[i], "px")
+                        new UnitValue(tX, "px"),
+                        new UnitValue(tY, "px")
                     );
                 }
 
